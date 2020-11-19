@@ -1,0 +1,176 @@
+#include <Wire.h>
+const int MPU = 0x68;
+float AccX, AccY, AccZ;
+float GyroX, GyroY, GyroZ;
+float roll, pitch, yaw;
+float elapsedTime, currentTime, previousTime;
+int c = 0;
+const int TriggerPin = 9;
+const int EchoPin = 10;
+long Duration = 0;
+int state = 0;
+#define PWMa 7
+#define PWMb 5
+#define PWMc 8
+#define PWMd 6
+
+//----------------------------------------------
+//--- FUNCTION TO SETUP THE ARDUINO ------------
+//----------------------------------------------
+void setup()
+{
+  pinMode(PWMa, OUTPUT);
+  pinMode(PWMb, OUTPUT);
+  pinMode(PWMc, OUTPUT);
+  pinMode(PWMd, OUTPUT);
+  pinMode(TriggerPin, OUTPUT);
+  pinMode(EchoPin, INPUT);
+  Serial.begin(19200);
+  Wire.begin();
+  Wire.beginTransmission(MPU);
+  Wire.write(0x6B);
+  Wire.write(0x00);
+  Wire.endTransmission(true);
+
+  state = 1;
+}
+
+//----------------------------------------------
+//--- FUNCTION TO RUN THE MAIN LOOP ------------
+//----------------------------------------------
+void loop()
+{
+  //------------------------------------
+  //--- REGULAR LOOP OPERATION ---------
+  //------------------------------------
+  Wire.beginTransmission(MPU);
+  Wire.write(0x3B);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 6, true);
+
+  AccX = (Wire.read() << 8 | Wire.read()) / 16384.0;
+  AccY = (Wire.read() << 8 | Wire.read()) / 16384.0;
+  AccZ = (Wire.read() << 8 | Wire.read()) / 16384.0;
+
+  previousTime = currentTime;
+  currentTime = millis();
+  elapsedTime = (currentTime - previousTime) / 1000;
+  Wire.beginTransmission(MPU);
+  Wire.write(0x43);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 6, true);
+  GyroX = (Wire.read() << 8 | Wire.read()) / 131.0;
+  GyroY = (Wire.read() << 8 | Wire.read()) / 131.0;
+  GyroZ = (Wire.read() << 8 | Wire.read()) / 131.0;
+
+  yaw =  yaw + GyroZ * elapsedTime;
+
+  digitalWrite(TriggerPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TriggerPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TriggerPin, LOW);
+
+  Duration = pulseIn(EchoPin, HIGH);
+
+  long Distance_cm = Distance(Duration);
+
+  //----------------------------------------------------------
+  //------ STATE MACHINE TO CONTROL MOVEMENT -----------------
+  //----------------------------------------------------------
+  Serial.println("start");
+
+  //--- STATE 1 ---------------------------------------
+  if (state == 1)
+  {
+    //Drive forwards for 1 second
+    digitalWrite(PWMa, LOW);
+    digitalWrite(PWMb, HIGH);
+    digitalWrite(PWMc, HIGH);
+    digitalWrite(PWMd, LOW);
+
+    delay (1000);
+
+    digitalWrite(PWMa, LOW);
+    digitalWrite(PWMb, LOW);
+    digitalWrite(PWMc, LOW);
+    digitalWrite(PWMd, LOW);
+
+    delay (500);
+    state = 2;
+  }
+  //--- STATE 2 ---------------------------------------
+  else if (state == 2)
+  {
+    //Turn 180deg
+    digitalWrite(PWMa, LOW);
+    digitalWrite(PWMb, HIGH);
+    digitalWrite(PWMc, LOW);
+    digitalWrite(PWMd, HIGH);
+
+    if (yaw >= 180)
+      state = 3;
+  }
+  //--- STATE 3 ---------------------------------------
+  else if (state == 3)
+  {
+    //Reverse up to the wall
+    digitalWrite(PWMa, HIGH);
+    digitalWrite(PWMb, LOW);
+    digitalWrite(PWMc, LOW);
+    digitalWrite(PWMd, HIGH);
+
+    if (Distance_cm <= 10)
+      state = 4;
+  }
+  //--- STATE 4 ---------------------------------------
+  else if (state == 4)
+  {
+    //Turn 90deg
+    digitalWrite(PWMa, LOW);
+    digitalWrite(PWMb, HIGH);
+    digitalWrite(PWMc, LOW);
+    digitalWrite(PWMd, HIGH);
+
+    Serial.println("done 3");
+
+    if (yaw >= 270 )
+      state = 5;
+  }
+  //--- STATE 5 ---------------------------------------
+  else if (state == 5)
+  {
+    //reverse up to wall
+    digitalWrite(PWMa, HIGH);
+    digitalWrite(PWMb, LOW);
+    digitalWrite(PWMc, LOW);
+    digitalWrite(PWMd, HIGH);
+
+    if (Distance_cm <= 10)
+      state = 6;
+  }
+  //--- STATE 6 ---------------------------------------
+  else if (state == 6)
+  {
+    //stop
+    digitalWrite(PWMa, LOW);
+    digitalWrite(PWMb, LOW);
+    digitalWrite(PWMc, LOW);
+    digitalWrite(PWMd, LOW);
+    while (1);
+  }
+}
+
+//----------------------------------------------
+//--- FUNCTION TO CONVERT TIME TO DISTANCE CM --
+//----------------------------------------------
+long Distance(long time)
+{
+  long DistanceCalc;
+
+  DistanceCalc = ((time * 0.034) / 2);
+
+  Serial.println(DistanceCalc);
+
+  return DistanceCalc;
+}
